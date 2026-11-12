@@ -1,0 +1,75 @@
+django:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/filooww/django-app
+    tag: "1.0.1"
+    pullPolicy: IfNotPresent
+  containerPort: 8000
+  service:
+    type: NodePort
+    port: 80
+    nodePort: 30080
+
+  config:
+    APP_NAME: "django-app"
+    DJANGO_DEBUG: "False"
+    DJANGO_ALLOWED_HOSTS: "*"
+
+  secretKey: ""
+  resources:
+    requests: {
+      cpu: 100m,
+      memory: 128Mi
+    }
+    limits: {
+      cpu: 200m,
+      memory: 256Mi
+    }
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+
+  livenessProbe:
+    httpGet: {
+      path: "/healthz",
+      port: http
+    }
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readinessProbe:
+    httpGet: {
+      path: "/healthz",
+      port: http
+    }
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+
+migrations:
+  enabled: true
+
+postgresql:
+  image: postgres:16-alpine
+  database: app
+  username: app
+  password: ""
+  port: 5432
+  storage:
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests: {
+      cpu: 100m,
+      memory: 128Mi
+    }
+    limits: {
+      cpu: 200m,
+      memory: 256Mi
+    }
+
+

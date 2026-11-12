@@ -1,0 +1,25 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "django-app.fullname" . }}-migrate-{{ .Values.django.image.tag | replace "." "-" }}
+  labels:
+    {{- include "django-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: "{{ .Values.django.image.repository }}:{{ .Values.django.image.tag }}"
+          command: ["python", "manage.py", "migrate", "--noinput"]
+          {{- include "django-app.env" . | nindent 10 }}
+          securityContext:
+            {{- toYaml .Values.django.securityContext | nindent 12 }}
+{{- end }}

@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "django-app.fullname" . }}-django
+  labels:
+    {{- include "django-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: django
+spec:
+  replicas: {{ .Values.django.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: django
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: django
+      annotations:
+        # при изменении ConfigMap меняется хэш -> поды перезапускаются с новым конфигом
+        checksum/config: {{ include (print $.Template.BasePath "/django-configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: django
+          image: "{{ .Values.django.image.repository }}:{{ .Values.django.image.tag }}"
+          imagePullPolicy: {{ .Values.django.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.django.containerPort }}
+          {{- include "django-app.env" . | nindent 10 }}
+          livenessProbe:
+            {{- toYaml .Values.django.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.django.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.django.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.django.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

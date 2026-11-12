@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "django-app.fullname" . }}-django
+  labels:
+    {{- include "django-app.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.django.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  APP_VERSION: {{ .Values.django.image.tag | quote }}
+  DB_HOST: {{ include "django-app.fullname" . }}-postgres
+  DB_PORT: {{ .Values.postgresql.port | quote }}
+  DB_NAME: {{ .Values.postgresql.database | quote }}
+  DB_USER: {{ .Values.postgresql.username | quote }}

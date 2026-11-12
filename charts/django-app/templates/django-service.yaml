@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "django-app.fullname" . }}-django
+  labels:
+    {{- include "django-app.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.django.service.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: django
+  ports:
+    - name: http
+      port: {{ .Values.django.service.port }}
+      targetPort: http
+      {{- if eq .Values.django.service.type "NodePort" }}
+      nodePort: {{ .Values.django.service.nodePort }}
+      {{- end }}
