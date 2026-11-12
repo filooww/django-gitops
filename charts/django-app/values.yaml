@@ -16,7 +16,7 @@ django:
     DJANGO_ALLOWED_HOSTS: "*"
 
   secretKey: ""
-  existingSecret: ""
+  existingSecret: django-app-secret
   resources:
     requests: {
       cpu: 100m,
@@ -59,7 +59,7 @@ postgresql:
   database: app
   username: app
   password: ""
-  existingSecret: ""
+  existingSecret: django-postgres-credentials
   port: 5432
   storage:
     size: 1Gi
