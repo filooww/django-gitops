@@ -1,5 +1,5 @@
 django:
-  replicaCount: 2
+  replicaCount: 3
   image:
     repository: ghcr.io/filooww/django-app
     tag: "1.0.1"
