@@ -12,12 +12,19 @@ envFrom:
   - configMapRef:
       name: {{ include "django-app.fullname" . }}-django
   - secretRef:
-      name: {{ include "django-app.fullname" . }}-django
+      name: {{ include "django-app.djangoSecretName" . }}
 env:
   - name: DB_PASSWORD
     valueFrom:
       secretKeyRef:
-        name: {{ include "django-app.fullname" . }}-postgres
+        name: {{ include "django-app.postgresSecretName" . }}
         key: POSTGRES_PASSWORD
+{{- end -}}
+{{- define "django-app.postgresSecretName" -}}
+{{- .Values.postgresql.existingSecret | default (printf "%s-postgres" (include "django-app.fullname" .)) -}}
+{{- end -}}
+
+{{- define "django-app.djangoSecretName" -}}
+{{- .Values.django.existingSecret | default (printf "%s-django" (include "django-app.fullname" .)) -}}
 {{- end -}}
 
