@@ -173,3 +173,39 @@ git commit -am "Scale django to 3" && git push
 | Change via Git | change `APP_NAME`, push | pods restart, `curl` shows the new name |
 | Scaling via Git | change `replicaCount`, push | Deployment has the new number of pods |
 | Self-heal | `kubectl scale deploy django-django -n django --replicas=1` | Argo CD returns it to the value from Git |
+
+## Screenshots
+
+Cluster nodes and system pods:
+
+![kubectl get nodes](screenshots/01-nodes.png)
+
+![kubectl get pods -A](screenshots/02-pods-all.png)
+
+Cilium status and pod-to-pod traffic between workers:
+
+![cilium status](screenshots/03-cilium-status.png)
+
+![ping between pods on different workers](screenshots/04-pod-ping.png)
+
+Application in namespace `django`:
+
+![kubectl get pods,pvc,svc,job -n django](screenshots/05-django-resources.png)
+
+![curl to the application](screenshots/06-app-curl.png)
+
+Argo CD Application (Synced, Healthy) and its resource tree:
+
+![Argo CD applications](screenshots/07-argocd-app.png)
+
+![Argo CD resource tree](screenshots/08-argocd-tree.png)
+
+Scaling through Git and self-heal:
+
+![scaling via git](screenshots/09-scale-git.png)
+
+![self-heal](screenshots/10-self-heal.png)
+
+Data survives a PostgreSQL pod restart:
+
+![postgres restart](screenshots/11-postgres-restart.png)
