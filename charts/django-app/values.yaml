@@ -11,7 +11,7 @@ django:
     nodePort: 30080
 
   config:
-    APP_NAME: "django-app"
+    APP_NAME: "django-prod"
     DJANGO_DEBUG: "False"
     DJANGO_ALLOWED_HOSTS: "*"
 
