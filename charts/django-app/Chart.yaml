@@ -3,4 +3,4 @@ name: django-app
 description: A Helm chart for deploying a Django application
 type: application
 version: 0.2.0
-appVersion: "1.0.3"
+appVersion: "1.0.4"
