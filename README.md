@@ -9,7 +9,9 @@ django-gitops/
 ├── argocd/
 │   ├── django-app.yaml           # Argo CD Application for the app
 │   ├── vault.yaml                # HashiCorp Vault (Helm chart)
-│   └── external-secrets.yaml     # External Secrets Operator (Helm chart)
+│   ├── external-secrets.yaml     # External Secrets Operator (Helm chart)
+│   ├── image-updater.yaml        # Argo CD Image Updater (Helm chart)
+│   └── django-image-updater.yaml # which image to watch and where to write the new tag
 ├── charts/
 │   └── django-app/               # Helm chart: Django + PostgreSQL
 │       ├── Chart.yaml
@@ -32,6 +34,11 @@ django-gitops/
 ## Architecture
 
 ```
+ CI (django-app) ──► ghcr.io/filooww/django-app:X.Y.Z
+                              ▲
+                              │ new semver tag
+ Argo CD Image Updater ───────┘──► commit "Deploy django-app X.Y.Z" to values.yaml
+                                        │
  git push ──► GitHub (this repo) ◄── Argo CD (polls, renders Helm, applies the diff)
                                           │
                                           ▼
@@ -156,7 +163,14 @@ The Application (`argocd/django-app.yaml`) has two sources from this repository:
 Bootstrap (the only manual step):
 
 ```bash
-kubectl apply -f argocd/vault.yaml -f argocd/external-secrets.yaml -f argocd/django-app.yaml
+kubectl apply -f argocd/vault.yaml -f argocd/external-secrets.yaml -f argocd/image-updater.yaml -f argocd/django-app.yaml
+```
+
+Image Updater needs write access to this repository. Create a fine-grained token (repository `django-gitops`, Contents: read and write) and store it in the cluster, then apply the `ImageUpdater` resource:
+
+```bash
+read -rs "GH_PAT?Token: " && kubectl -n argocd create secret generic git-creds --from-literal=username=filooww --from-literal=password="$GH_PAT"; unset GH_PAT
+kubectl apply -f argocd/django-image-updater.yaml
 ```
 
 ## How to change things
@@ -166,7 +180,8 @@ Every change is a commit to `charts/django-app/values.yaml`:
 | Change | Edit |
 |---|---|
 | Scale Django | `django.replicaCount: 3` |
-| Deploy a new version | `django.image.tag: "1.0.2"` |
+| Deploy a new version | nothing: Image Updater picks up the newest `X.Y.Z` tag from ghcr and commits it here |
+| Pin or roll back a version | `django.image.tag: "1.0.2"` and pause Image Updater (`kubectl -n argocd delete imageupdater django`) |
 | Change app config | `django.config.APP_NAME: "django-prod"` |
 
 ```bash

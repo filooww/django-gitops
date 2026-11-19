@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: image-updater
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argocd-image-updater
+    targetRevision: 1.5.0
+    helm:
+      releaseName: argocd-image-updater
+      valuesObject:
+        config:
+          git.user: argocd-image-updater
+          git.email: argocd-image-updater@users.noreply.github.com
+          git.commit-message-template: |
+            {{ range .AppChanges -}}
+            Deploy django-app {{ .NewTag }}
+
+            Previous: {{ .OldTag }}
+            {{- with index .Labels "org.opencontainers.image.revision" }}
+            Source: https://github.com/filooww/devops-django/commit/{{ . }}
+            {{- end }}
+            {{ end -}}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
