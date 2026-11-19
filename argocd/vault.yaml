@@ -1,0 +1,34 @@
+# HashiCorp Vault: хранилище секретов (standalone, данные на PVC local-path)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://helm.releases.hashicorp.com
+    chart: vault
+    targetRevision: 0.34.1            # Vault 2.0.4
+    helm:
+      releaseName: vault
+      valuesObject:
+        injector:
+          enabled: false              # секреты в поды отдаёт External Secrets Operator
+        server:
+          standalone:
+            enabled: true             # один под, storage "file" в /vault/data
+          dataStorage:
+            size: 1Gi
+            storageClass: local-path
+        ui:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
