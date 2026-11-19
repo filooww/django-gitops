@@ -1,4 +1,3 @@
-# HashiCorp Vault: хранилище секретов (standalone, данные на PVC local-path)
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -9,15 +8,15 @@ spec:
   source:
     repoURL: https://helm.releases.hashicorp.com
     chart: vault
-    targetRevision: 0.34.1            # Vault 2.0.4
+    targetRevision: 0.34.1
     helm:
       releaseName: vault
       valuesObject:
         injector:
-          enabled: false              # секреты в поды отдаёт External Secrets Operator
+          enabled: false
         server:
           standalone:
-            enabled: true             # один под, storage "file" в /vault/data
+            enabled: true
           dataStorage:
             size: 1Gi
             storageClass: local-path

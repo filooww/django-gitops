@@ -1,13 +1,15 @@
 # django-gitops
 
-GitOps repository for the Django application ([django-app](https://github.com/filooww/django-app)). It contains the Helm chart, the encrypted secrets and the Argo CD Application. Argo CD watches this repository and keeps the cluster in sync with it: **any change is made by a commit, never by `kubectl apply` / `helm install`**.
+GitOps repository for the Django application ([django-app](https://github.com/filooww/django-app)). It contains the Helm chart, the Argo CD Applications and references to secrets stored in Vault. Argo CD watches this repository and keeps the cluster in sync with it: **any change is made by a commit, never by `kubectl apply` / `helm install`**.
 
 ## Repository structure
 
 ```
 django-gitops/
 ├── argocd/
-│   └── django-app.yaml           # Argo CD Application (applied once to bootstrap)
+│   ├── django-app.yaml           # Argo CD Application for the app
+│   ├── vault.yaml                # HashiCorp Vault (Helm chart)
+│   └── external-secrets.yaml     # External Secrets Operator (Helm chart)
 ├── charts/
 │   └── django-app/               # Helm chart: Django + PostgreSQL
 │       ├── Chart.yaml
@@ -23,9 +25,8 @@ django-gitops/
 │           ├── postgres-service.yaml     # headless Service
 │           └── postgres-statefulset.yaml # StatefulSet + PVC (volumeClaimTemplates)
 └── secrets/
-    └── django/                   # SealedSecrets (encrypted, safe to keep in Git)
-        ├── app-secret.yaml               # DJANGO_SECRET_KEY
-        └── postgres-credentials.yaml     # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD
+    └── django/
+        └── vault-secrets.yaml    # SecretStore + ExternalSecrets (no values, only Vault paths)
 ```
 
 ## Architecture
@@ -35,7 +36,7 @@ django-gitops/
                                           │
                                           ▼
  namespace django:
-   SealedSecrets ──► sealed-secrets controller ──► Secrets
+   ExternalSecrets ──► External Secrets Operator ◄── Vault (namespace vault) ──► Secrets
    Service django-django (NodePort 30080) ──► Deployment django-django (Gunicorn, N replicas)
                                                    │ DB_HOST=django-postgres
                                                    ▼
@@ -116,15 +117,27 @@ helm template django charts/django-app | kubectl apply --dry-run=server -f -
 
 ## Secrets
 
-Passwords are never stored in Git in plain text. They are encrypted with [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets): only the controller inside the cluster has the private key, so the `SealedSecret` files are safe in a public repository. The chart uses them through `existingSecret`.
+Secret values live only in Vault. Git contains `ExternalSecret` objects that point to Vault paths; External Secrets Operator reads them and creates regular Kubernetes Secrets, which the chart uses through `existingSecret`.
 
-Create or rotate a secret:
+| Vault path | Kubernetes Secret | Keys |
+|---|---|---|
+| `secret/django/app` | `django-app-secret` | `DJANGO_SECRET_KEY` |
+| `secret/django/postgres` | `django-postgres-credentials` | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` |
+
+ESO logs in to Vault with the `django-vault` ServiceAccount (Kubernetes auth, role `django`). The `django` policy allows read-only access to `secret/data/django/*`. Secrets are refreshed every hour.
+
+Rotate a secret:
 
 ```bash
-kubectl create secret generic django-postgres-credentials -n django --dry-run=client -o yaml \
-  --from-literal=POSTGRES_DB=app --from-literal=POSTGRES_USER=app --from-literal=POSTGRES_PASSWORD="$DB_PASS" \
-  | kubeseal -o yaml > secrets/django/postgres-credentials.yaml
-git commit -am "Rotate DB credentials" && git push
+kubectl -n vault exec -it vault-0 -- vault kv patch secret/django/app DJANGO_SECRET_KEY=-
+kubectl -n django annotate externalsecret django-app-secret force-sync=$(date +%s) --overwrite
+kubectl -n django rollout restart deploy/django-django
+```
+
+Vault runs in standalone mode and is sealed after every restart of `vault-0`. Unseal it with the key from the password manager:
+
+```bash
+kubectl -n vault exec -it vault-0 -- vault operator unseal
 ```
 
 ## Argo CD
@@ -143,7 +156,7 @@ The Application (`argocd/django-app.yaml`) has two sources from this repository:
 Bootstrap (the only manual step):
 
 ```bash
-kubectl apply -f argocd/django-app.yaml
+kubectl apply -f argocd/vault.yaml -f argocd/external-secrets.yaml -f argocd/django-app.yaml
 ```
 
 ## How to change things

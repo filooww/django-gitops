@@ -17,7 +17,6 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: django
       annotations:
-        # при изменении ConfigMap меняется хэш -> поды перезапускаются с новым конфигом
         checksum/config: {{ include (print $.Template.BasePath "/django-configmap.yaml") . | sha256sum }}
     spec:
       containers:
