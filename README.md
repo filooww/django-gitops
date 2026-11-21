@@ -12,6 +12,7 @@ django-gitops/
 │   ├── external-secrets.yaml     # External Secrets Operator (Helm chart)
 │   ├── image-updater.yaml        # Argo CD Image Updater (Helm chart)
 │   ├── argo-rollouts.yaml        # Argo Rollouts controller + dashboard (Helm chart)
+│   ├── badge-reporter.yaml       # CronJob that publishes rollout state to the README badges
 │   └── django-image-updater.yaml # which image to watch and where to write the new tag
 ├── charts/
 │   └── django-app/               # Helm chart: Django + PostgreSQL
@@ -166,7 +167,7 @@ The Application (`argocd/django-app.yaml`) has two sources from this repository:
 Bootstrap (the only manual step):
 
 ```bash
-kubectl apply -f argocd/vault.yaml -f argocd/external-secrets.yaml -f argocd/image-updater.yaml -f argocd/argo-rollouts.yaml -f argocd/django-app.yaml
+kubectl apply -f argocd/vault.yaml -f argocd/external-secrets.yaml -f argocd/image-updater.yaml -f argocd/argo-rollouts.yaml -f argocd/django-app.yaml -f argocd/badge-reporter.yaml
 ```
 
 Image Updater needs write access to this repository. Create a fine-grained token (repository `django-gitops`, Contents: read and write) and store it in the cluster, then apply the `ImageUpdater` resource:
@@ -199,6 +200,10 @@ kubectl -n argo-rollouts port-forward svc/argo-rollouts-dashboard 3100:3100   # 
 ```
 
 `PruneLast=true` on the Application removed the old Deployment only after the Rollout pods were healthy, so the switch had no downtime.
+
+## README badges
+
+`apps/badge-reporter` runs a CronJob every 5 minutes. It reads the `django-django` Rollout and the latest AnalysisRun with a read-only Role and writes `k8s.json` and `canary.json` (shields.io endpoint format) to the `badges` branch of django-app. The GitHub token (fine-grained, Contents read and write on django-app only) comes from Vault at `secret/django/badges` through an ExternalSecret; the branch rules still block direct pushes to `main` and `develop`.
 
 ## How to change things
 
