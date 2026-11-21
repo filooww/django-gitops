@@ -12,7 +12,7 @@ django:
   config:
     APP_NAME: "django-prod"
     DJANGO_DEBUG: "False"
-    DJANGO_ALLOWED_HOSTS: "*"
+    DJANGO_ALLOWED_HOSTS: "broken.invalid"
   secretKey: ""
   existingSecret: django-app-secret
   resources:
