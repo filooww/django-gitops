@@ -11,6 +11,7 @@ django-gitops/
 │   ├── vault.yaml                # HashiCorp Vault (Helm chart)
 │   ├── external-secrets.yaml     # External Secrets Operator (Helm chart)
 │   ├── image-updater.yaml        # Argo CD Image Updater (Helm chart)
+│   ├── argo-rollouts.yaml        # Argo Rollouts controller + dashboard (Helm chart)
 │   └── django-image-updater.yaml # which image to watch and where to write the new tag
 ├── charts/
 │   └── django-app/               # Helm chart: Django + PostgreSQL
@@ -20,8 +21,10 @@ django-gitops/
 │           ├── _helpers.tpl              # names, labels, shared env block
 │           ├── django-configmap.yaml     # non-secret config
 │           ├── django-secret.yaml        # created only if django.existingSecret is empty
-│           ├── django-deployment.yaml    # probes, resources, securityContext
+│           ├── django-rollout.yaml       # Rollout: canary steps, probes, resources, securityContext
+│           ├── django-analysis.yaml      # AnalysisTemplate: smoke test of the canary pods
 │           ├── django-service.yaml       # NodePort 30080
+│           ├── django-service-canary.yaml # ClusterIP, points only at canary pods during a rollout
 │           ├── migrate-job.yaml          # migrations Job
 │           ├── postgres-secret.yaml      # created only if postgresql.existingSecret is empty
 │           ├── postgres-service.yaml     # headless Service
@@ -163,7 +166,7 @@ The Application (`argocd/django-app.yaml`) has two sources from this repository:
 Bootstrap (the only manual step):
 
 ```bash
-kubectl apply -f argocd/vault.yaml -f argocd/external-secrets.yaml -f argocd/image-updater.yaml -f argocd/django-app.yaml
+kubectl apply -f argocd/vault.yaml -f argocd/external-secrets.yaml -f argocd/image-updater.yaml -f argocd/argo-rollouts.yaml -f argocd/django-app.yaml
 ```
 
 Image Updater needs write access to this repository. Create a fine-grained token (repository `django-gitops`, Contents: read and write) and store it in the cluster, then apply the `ImageUpdater` resource:
@@ -173,6 +176,30 @@ read -rs "GH_PAT?Token: " && kubectl -n argocd create secret generic git-creds -
 kubectl apply -f argocd/django-image-updater.yaml
 ```
 
+## Progressive delivery and automatic rollback
+
+Django runs as an Argo Rollouts `Rollout` instead of a `Deployment`. A new version (new image tag or new config) goes out in steps:
+
+```
+setWeight 25 ──► analysis ──► setWeight 50 ──► pause 30s ──► setWeight 100
+ 1 canary pod     3 smoke checks                               canary becomes stable
+                  via django-django-canary
+```
+
+The rollout is aborted automatically, and all traffic stays on the previous version, when:
+
+- the smoke test fails: a Job calls `/readyz` and `/` on the canary Service three times, any failure stops the rollout;
+- the canary pods never become ready (`readinessProbe` on `/readyz`: database reachable and migrations applied) within `progressDeadlineSeconds: 180` (`progressDeadlineAbort: true`).
+
+After an abort Argo CD shows the `django` application as `Degraded`: Git still points at the version the cluster refused. Fix it with a new commit (a newer image or a revert).
+
+```bash
+kubectl argo rollouts get rollout django-django -n django --watch
+kubectl -n argo-rollouts port-forward svc/argo-rollouts-dashboard 3100:3100   # http://localhost:3100
+```
+
+`PruneLast=true` on the Application removed the old Deployment only after the Rollout pods were healthy, so the switch had no downtime.
+
 ## How to change things
 
 Every change is a commit to `charts/django-app/values.yaml`:
@@ -181,6 +208,7 @@ Every change is a commit to `charts/django-app/values.yaml`:
 |---|---|
 | Scale Django | `django.replicaCount: 3` |
 | Deploy a new version | nothing: Image Updater picks up the newest `X.Y.Z` tag from ghcr and commits it here |
+| Retry an aborted rollout after fixing Git | `kubectl argo rollouts retry rollout django-django -n django` |
 | Pin or roll back a version | `django.image.tag: "1.0.2"` and pause Image Updater (`kubectl -n argocd delete imageupdater django`) |
 | Change app config | `django.config.APP_NAME: "django-prod"` |
 
