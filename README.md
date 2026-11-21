@@ -265,3 +265,7 @@ Scaling through Git and self-heal:
 Data survives a PostgreSQL pod restart:
 
 ![postgres restart](screenshots/11-postgres-restart.png)
+
+Automatic rollback: a release with a broken `DJANGO_ALLOWED_HOSTS` never became ready, Argo Rollouts aborted it after `progressDeadlineSeconds` and kept all traffic on the stable version:
+
+![rollout aborted](screenshots/12-rollout-aborted.png)
