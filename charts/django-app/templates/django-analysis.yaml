@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ include "django-app.fullname" . }}-smoke
+  labels:
+    {{- include "django-app.labels" . | nindent 4 }}
+spec:
+  metrics:
+    - name: canary-smoke-test
+      count: {{ .Values.django.rollout.analysis.count }}
+      interval: {{ .Values.django.rollout.analysis.interval }}
+      failureLimit: 0
+      provider:
+        job:
+          spec:
+            backoffLimit: 0
+            activeDeadlineSeconds: 60
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: smoke
+                    image: {{ .Values.django.rollout.analysis.image }}
+                    command:
+                      - sh
+                      - -c
+                      - |
+                        set -e
+                        base=http://{{ include "django-app.fullname" . }}-django-canary
+                        curl -fsS --max-time 5 "$base/readyz"
+                        curl -fsS --max-time 5 "$base/" | grep -q '"version"'
+                        echo "canary is healthy"
+                    resources:
+                      requests: {cpu: 10m, memory: 16Mi}
+                      limits: {cpu: 100m, memory: 32Mi}
+                    securityContext:
+                      runAsNonRoot: true
+                      runAsUser: 100
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: ["ALL"]

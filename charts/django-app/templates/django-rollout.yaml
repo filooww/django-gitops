@@ -1,5 +1,5 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: {{ include "django-app.fullname" . }}-django
   labels:
@@ -7,6 +7,22 @@ metadata:
     app.kubernetes.io/component: django
 spec:
   replicas: {{ .Values.django.replicaCount }}
+  revisionHistoryLimit: 5
+  progressDeadlineSeconds: {{ .Values.django.rollout.progressDeadlineSeconds }}
+  progressDeadlineAbort: true
+  strategy:
+    canary:
+      canaryService: {{ include "django-app.fullname" . }}-django-canary
+      maxSurge: 1
+      maxUnavailable: 0
+      steps:
+        - setWeight: 25
+        - analysis:
+            templates:
+              - templateName: {{ include "django-app.fullname" . }}-smoke
+        - setWeight: 50
+        - pause: {duration: {{ .Values.django.rollout.pauseBetweenSteps }}}
+        - setWeight: 100
   selector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
