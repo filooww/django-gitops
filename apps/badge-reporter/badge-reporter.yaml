@@ -1,0 +1,161 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: badge-reporter
+  namespace: django
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: badge-reporter
+  namespace: django
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["rollouts", "analysisruns"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: badge-reporter
+  namespace: django
+subjects:
+  - kind: ServiceAccount
+    name: badge-reporter
+    namespace: django
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: badge-reporter
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: badge-reporter-github
+  namespace: django
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault
+    kind: SecretStore
+  target:
+    name: badge-reporter-github
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: GITHUB_TOKEN
+      remoteRef:
+        key: django/badges
+        property: GITHUB_TOKEN
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: badge-reporter
+  namespace: django
+data:
+  report.sh: |
+    #!/bin/sh
+    # Publishes the state of the Django rollout as shields.io endpoint JSON on the "badges" branch.
+    set -eu
+    REPO="${BADGE_REPO:-filooww/django-app}"
+    API="https://api.github.com/repos/$REPO/contents"
+
+    put() {
+      file="$1"; json="$2"
+      current="$(curl -fsS -H "Authorization: Bearer $GITHUB_TOKEN" "$API/$file?ref=badges" || echo '{}')"
+      sha="$(printf '%s' "$current" | jq -r '.sha // empty')"
+      old="$(printf '%s' "$current" | jq -r '.content // empty' | tr -d '\n' | base64 -d 2>/dev/null || true)"
+      if [ "$old" = "$json" ]; then echo "$file unchanged"; return; fi
+      body="$(jq -nc --arg m "badge: $file" --arg c "$(printf '%s' "$json" | base64 | tr -d '\n')" --arg s "$sha" \
+        '{message: $m, branch: "badges", content: $c} + (if $s == "" then {} else {sha: $s} end)')"
+      curl -fsS -X PUT -H "Authorization: Bearer $GITHUB_TOKEN" -d "$body" "$API/$file" > /dev/null
+      echo "$file updated: $json"
+    }
+
+    badge() {
+      jq -nc --arg l "$1" --arg m "$2" --arg c "$3" --arg logo "$4" \
+        '{schemaVersion: 1, label: $l, message: $m, color: $c, style: "for-the-badge", namedLogo: $logo, logoColor: "white"}'
+    }
+
+    rollout="$(kubectl -n django get rollout django-django -o json)"
+    phase="$(printf '%s' "$rollout" | jq -r '.status.phase')"
+    version="$(printf '%s' "$rollout" | jq -r '.spec.template.spec.containers[0].image | split(":") | last')"
+    case "$phase" in
+      Healthy) color=brightgreen ;;
+      Progressing|Paused) color=blue ;;
+      *) color=red ;;
+    esac
+    put k8s.json "$(badge k8s "$version · $(printf '%s' "$phase" | tr 'A-Z' 'a-z')" "$color" kubernetes)"
+
+    run="$(kubectl -n django get analysisrun -o json | jq -c '.items | sort_by(.metadata.creationTimestamp) | last // empty')"
+    if [ -n "$run" ]; then
+      run_phase="$(printf '%s' "$run" | jq -r '.status.phase')"
+      ok="$(printf '%s' "$run" | jq -r '.status.metricResults[0].successful // 0')"
+      total="$(printf '%s' "$run" | jq -r '.status.metricResults[0].count // 0')"
+      case "$run_phase" in
+        Successful) message="$ok/$total ✓"; color=brightgreen ;;
+        Running) message="$ok/$total running"; color=blue ;;
+        *) message="$ok/$total ✗"; color=red ;;
+      esac
+    else
+      message="no analysis yet"; color=lightgrey
+    fi
+    put canary.json "$(badge canary "$message" "$color" argo)"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: badge-reporter
+  namespace: django
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          serviceAccountName: badge-reporter
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+          containers:
+            - name: report
+              image: alpine/k8s:1.36.0
+              command: ["sh", "/scripts/report.sh"]
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: badge-reporter-github
+                      key: GITHUB_TOKEN
+              resources:
+                requests: {cpu: 10m, memory: 32Mi}
+                limits: {cpu: 200m, memory: 128Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: badge-reporter
+            - name: tmp
+              emptyDir: {}
